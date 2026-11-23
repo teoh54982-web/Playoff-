@@ -2156,6 +2156,11 @@ nav.tournament-tabs.nav-tabs {
 }
 .hb-plan-pay-list span{font-size:12px;font-weight:760;color:#5b6d61;min-width:110px}
 .hb-plan-pay-list b{font-size:18px;letter-spacing:.02em}
+.hb-plan-paypal{
+  margin-top:4px;min-height:42px;border:0;border-radius:12px;cursor:pointer;
+  font:inherit;font-weight:800;background:#003087;color:#fff;
+}
+.hb-plan-paypal:disabled{opacity:.5;cursor:not-allowed}
 .hb-plan-copy{
   margin-left:auto;border:1px solid #d7e2d4;background:#fff;border-radius:999px;
   padding:4px 10px;font:inherit;font-size:11px;font-weight:800;cursor:pointer;color:#1f3b2c;
@@ -9800,6 +9805,9 @@ function hbPayKeysView() {
   const [orange, setOrange] = E.useState("");
   const [freeM, setFreeM] = E.useState("");
   const [name, setName] = E.useState("");
+  const [ppId, setPpId] = E.useState("");
+  const [ppSecret, setPpSecret] = E.useState("");
+  const [ppMode, setPpMode] = E.useState("live");
   const [st, setSt] = E.useState(null);
   const [items, setItems] = E.useState([]);
   const [busy, setBusy] = E.useState("");
@@ -9813,6 +9821,7 @@ function hbPayKeysView() {
         if (r.orange) setOrange(r.orange);
         if (r.free) setFreeM(r.free);
         if (r.name) setName(r.name);
+        if (r.paypalMode) setPpMode(r.paypalMode);
       }
     }).catch(() => setSt({ configured: false }));
     hbPayCall("inbox").then((r) => setItems((r && r.items) || [])).catch(() => setItems([]));
@@ -9826,6 +9835,17 @@ function hbPayKeysView() {
       setMsg("Numéros enregistrés. Les boutons Payer affichent Wave / Orange Money.");
     } catch (e) {
       setMsg((e && e.message) || "Enregistrement impossible.");
+    } finally { setBusy(""); }
+  }
+  async function savePaypal() {
+    setBusy("paypal"); setMsg("");
+    try {
+      const out = await hbPayCall("save-paypal", { client_id: ppId, secret: ppSecret, mode: ppMode });
+      setSt(Object.assign({}, st || {}, out));
+      setPpId(""); setPpSecret("");
+      setMsg("PayPal enregistré. Les clients peuvent payer 2 € / 4 € / 8 €, l’offre s’active toute seule.");
+    } catch (e) {
+      setMsg((e && e.message) || "PayPal : enregistrement impossible.");
     } finally { setBusy(""); }
   }
   async function decide(id, ok) {
@@ -9857,6 +9877,23 @@ function hbPayKeysView() {
       type: "button", className: "hb-life-primary",
       disabled: !!busy || (!wave && !orange && !freeM), onClick: save,
     }, busy === "save" ? "…" : "Enregistrer les numéros"),
+    hbP("h3", { style: { marginTop: "12px" } }, "PayPal"),
+    hbP("p", { className: st && st.paypal ? "hb-plan-banner is-ok" : "hb-plan-banner" },
+      st && st.paypal
+        ? "PayPal actif" + (st.paypalHint ? " · …" + st.paypalHint : "") + " · " + (st.paypalMode === "sandbox" ? "sandbox" : "production") + ". Essentiel 2 €, Pro 4 €, Elite 8 €."
+        : "Optionnel. Compte Business → developer.paypal.com → Apps & Credentials → Live → Client ID + Secret."),
+    hbP("label", null, "PayPal Client ID",
+      hbP("input", { type: "text", autoComplete: "off", value: ppId, onChange: (e) => setPpId(e.target.value), placeholder: "AXXXX…" })),
+    hbP("label", null, "PayPal Secret",
+      hbP("input", { type: "password", autoComplete: "off", value: ppSecret, onChange: (e) => setPpSecret(e.target.value), placeholder: "Secret" })),
+    hbP("label", null, "Mode PayPal",
+      hbP("select", { value: ppMode, onChange: (e) => setPpMode(e.target.value) },
+        hbP("option", { value: "live" }, "Production"),
+        hbP("option", { value: "sandbox" }, "Sandbox (test)"))),
+    hbP("button", {
+      type: "button", className: "hb-life-primary",
+      disabled: !!busy || !ppId || !ppSecret, onClick: savePaypal,
+    }, busy === "paypal" ? "…" : "Enregistrer PayPal"),
     msg ? hbP("p", { className: "hb-life-muted" }, msg) : null,
     hbP("h3", { style: { marginTop: "12px" } }, "Paiements à confirmer"),
     items.length
@@ -10344,17 +10381,21 @@ async function hbPlanConsumeReturn() {
   let pid = "";
   let cancel = false;
   let okReturn = false;
+  let ppOk = false;
   try {
     const u = new URL(location.href);
     token = u.searchParams.get("token") || u.searchParams.get("invoice_token") || "";
     pid = u.searchParams.get("pid") || "";
-    cancel = u.searchParams.get("hb_pay") === "cancel";
+    cancel = u.searchParams.get("hb_pay") === "cancel" || u.searchParams.get("hb_pp") === "cancel";
     okReturn = u.searchParams.get("hb_pay") === "ok";
-    if (token || cancel || pid || okReturn) {
+    ppOk = u.searchParams.get("hb_pp") === "ok";
+    if (token || cancel || pid || okReturn || ppOk || u.searchParams.get("hb_pp")) {
       u.searchParams.delete("token");
       u.searchParams.delete("invoice_token");
       u.searchParams.delete("hb_pay");
+      u.searchParams.delete("hb_pp");
       u.searchParams.delete("pid");
+      u.searchParams.delete("PayerID");
       const q = u.searchParams.toString();
       history.replaceState({}, "", u.pathname + (q ? "?" + q : "") + u.hash);
     }
@@ -10363,13 +10404,17 @@ async function hbPlanConsumeReturn() {
     if (typeof hbOpenLife === "function") hbOpenLife("pricing");
     return { ok: false, status: "canceled" };
   }
-  if (!token && !pid && !okReturn) return null;
+  if (!token && !pid && !okReturn && !ppOk) return null;
   if (typeof hbOpenLife === "function") hbOpenLife("pricing");
   try {
-    const out = await hbPayCall("confirm", { token, pid });
+    const out = ppOk
+      ? await hbPayCall("paypal-capture", { token, pid })
+      : await hbPayCall("confirm", { token, pid });
     if (out && out.ok && out.plan) {
       hbPlanRemember(out.plan);
+      HB_PLAN_STATE.until = out.until || HB_PLAN_STATE.until;
       try { window.dispatchEvent(new CustomEvent("hb-plan-changed", { detail: out.plan })); } catch (e) { /* ignore */ }
+      try { window.dispatchEvent(new CustomEvent("hb-plan-thanks", { detail: { plan: out.plan, until: out.until || null } })); } catch (e2) { /* ignore */ }
     }
     return out;
   } catch (e) {
@@ -10589,7 +10634,15 @@ function hbPlanView({ onClose }) {
   E.useEffect(() => {
     const on = () => setCur(hbPlanId());
     window.addEventListener("hb-plan-changed", on);
-    return () => window.removeEventListener("hb-plan-changed", on);
+    const thanksOn = (e) => {
+      const d = e && e.detail;
+      if (d && d.plan) applyPaid(d.plan, d.until);
+    };
+    window.addEventListener("hb-plan-thanks", thanksOn);
+    return () => {
+      window.removeEventListener("hb-plan-changed", on);
+      window.removeEventListener("hb-plan-thanks", thanksOn);
+    };
   }, []);
   E.useEffect(() => {
     if (!invoice || !invoice.payment_id || invoice.status !== "claimed") return;
@@ -10642,7 +10695,7 @@ function hbPlanView({ onClose }) {
       return;
     }
     if (id !== "free" && pay.configured === false && !admin) {
-      setErr("Le paiement est à configurer. L’admin doit indiquer un numéro Wave ou Orange Money.");
+      setErr("Le paiement est à configurer. L’admin doit indiquer Wave / Orange Money ou PayPal.");
       return;
     }
     setBusy(id);
@@ -10672,18 +10725,33 @@ function hbPlanView({ onClose }) {
       setErr((e && e.message) || "Impossible de signaler le paiement.");
     } finally { setBusy(""); }
   }
+  async function startPaypal() {
+    if (!invoice || busy) return;
+    setBusy("paypal"); setErr("");
+    try {
+      const origin = location.href.split("#")[0].split("?")[0];
+      const out = await hbPayCall("paypal-start", { plan: invoice.plan, pid: invoice.payment_id, origin });
+      if (out && out.url) {
+        location.href = out.url;
+        return;
+      }
+      throw new Error("Lien PayPal introuvable.");
+    } catch (e) {
+      setErr((e && e.message) || "PayPal indisponible.");
+    } finally { setBusy(""); }
+  }
   const until = HB_PLAN_STATE.until ? Date.parse(HB_PLAN_STATE.until) : 0;
   const untilLabel = until ? new Date(until).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) : "";
   return hbP("div", { className: "hb-plan-page" },
     hbP("header", { className: "hb-plan-intro" },
       hbP("p", { className: "hb-plan-kicker" }, "OFFRES PLAYOFF"),
       hbP("h3", null, "Choisis l’offre qui va avec ton club"),
-      hbP("p", null, "Gratuit pour démarrer. Essentiel, Pro et Elite se paient 30 jours par Wave, Orange Money ou Free Money.")),
+      hbP("p", null, "Gratuit pour démarrer. Essentiel, Pro et Elite se paient 30 jours par Wave, Orange Money, Free Money ou PayPal.")),
     pay.configured === false
       ? hbP("p", { className: "hb-plan-banner" }, admin
-        ? "Paiement à configurer : ouvre le Dashboard et colle tes numéros Wave / Orange Money."
-        : "Le paiement est à configurer. Les offres payantes s’activeront dès que les numéros seront indiqués.")
-      : hbP("p", { className: "hb-plan-banner is-ok" }, "Paiement Wave · Orange Money · 30 jours"),
+        ? "Paiement à configurer : ouvre le Dashboard et colle tes numéros Wave / Orange Money, ou PayPal."
+        : "Le paiement est à configurer. Les offres payantes s’activeront dès que Wave, Orange Money ou PayPal sera branché.")
+      : hbP("p", { className: "hb-plan-banner is-ok" }, "Paiement Wave · Orange Money" + (pay.paypal ? " · PayPal" : "") + " · 30 jours"),
     invoice ? hbP("div", { className: "hb-plan-pay" },
       hbP("h4", null, "Envoie " + hbPlanFmtXof(invoice.amount)),
       hbP("p", null, "Offre " + ((HB_PLANS[invoice.plan] && HB_PLANS[invoice.plan].name) || invoice.plan) + " · 30 jours" + (invoice.name ? " · " + invoice.name : "")),
@@ -10694,12 +10762,20 @@ function hbPlanView({ onClose }) {
           hbP("span", null, m.label),
           hbP("b", null, m.number),
           hbP("button", { type: "button", className: "hb-plan-copy", onClick: () => hbPlanCopy(m.number) }, "Copier")))),
+      (invoice.paypal && invoice.status !== "claimed")
+        ? hbP("button", {
+          type: "button", className: "hb-plan-paypal", disabled: !!busy,
+          onClick: startPaypal,
+        }, busy === "paypal" ? "…" : "Payer avec PayPal" + (invoice.eur ? " · " + invoice.eur.replace(".00", "") + " €" : ""))
+        : null,
       invoice.status === "claimed"
         ? hbP("p", { className: "hb-plan-banner is-ok" }, "Envoi signalé. On attend la confirmation — ne ferme pas tout de suite.")
-        : hbP("button", {
-          type: "button", className: "hb-plan-btn", disabled: !!busy,
-          onClick: claim,
-        }, busy === "claim" ? "…" : "J’ai payé"),
+        : (invoice.methods && invoice.methods.length
+          ? hbP("button", {
+            type: "button", className: "hb-plan-btn", disabled: !!busy,
+            onClick: claim,
+          }, busy === "claim" ? "…" : "J’ai payé")
+          : null),
       hbP("button", { type: "button", className: "hb-plan-pay-cancel", onClick: () => setInvoice(null) }, "Fermer")) : null,
     thanks ? hbP("div", { className: "hb-plan-thanks", role: "status" },
       hbP("p", { className: "hb-plan-kicker" }, "C’EST CONFIRMÉ"),
@@ -13378,5 +13454,5 @@ function hbMesSuivis({ rows, teams, orgs, onOpenT, onOpenE, onOpenO }) {
 
 const TT=US;_N.createRoot(document.getElementById("root")).render(a.jsxs(hbOnlineGate,{children:[a.jsxs(TT,{children:[a.jsx(ET,{}),typeof hbNavListener==="function"?a.jsx(hbNavListener,{}):null,typeof hbLifeHost==="function"?a.jsx(hbLifeHost,{}):null]}),a.jsx(hbCloudHub,{})]}));
 </script>
-<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a5ee59539fd9c79c',t:'MTc5NTQxNzc3Mg=='};var l=window.parent.location,o;try{o=new URL(l.origin).origin}catch(e){try{o=new URL(new URL(l.href).origin).origin}catch(e){o=''}}var u='/cdn-cgi/challenge-platform/scripts/jsd/main.js?ray=a5ee59539fd9c79c',a=document.createElement('script');a.src=o?new URL(u,o).href:u;document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>
