@@ -2142,6 +2142,38 @@ nav.tournament-tabs.nav-tabs {
   border:1px solid #d7e2d4;border-radius:10px;padding:8px 10px;font:inherit;background:#fff;
 }
 .hb-pay-keys .hb-life-primary{align-self:flex-start}
+.hb-plan-pay{
+  display:flex;flex-direction:column;gap:8px;
+  padding:14px;border:1px solid #c9dc8a;border-radius:16px;background:#f7fbe8;
+}
+.hb-plan-pay h4{margin:0;font-size:16px}
+.hb-plan-pay p{margin:0;font-size:13px;color:#2c4034;line-height:1.4}
+.hb-plan-pay-ref{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.hb-plan-pay-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.hb-plan-pay-list li{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:8px 10px;border-radius:12px;background:#fff;border:1px solid #dce6d9;
+}
+.hb-plan-pay-list span{font-size:12px;font-weight:760;color:#5b6d61;min-width:110px}
+.hb-plan-pay-list b{font-size:18px;letter-spacing:.02em}
+.hb-plan-copy{
+  margin-left:auto;border:1px solid #d7e2d4;background:#fff;border-radius:999px;
+  padding:4px 10px;font:inherit;font-size:11px;font-weight:800;cursor:pointer;color:#1f3b2c;
+}
+.hb-plan-pay-cancel{
+  align-self:flex-start;border:0;background:transparent;color:#5b6d61;
+  font:inherit;font-size:12px;font-weight:760;cursor:pointer;padding:4px 0;
+}
+.hb-pay-inbox{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.hb-pay-inbox li{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:10px;
+  padding:10px;border:1px solid #dce6d9;border-radius:12px;background:#fff;
+}
+.hb-pay-inbox strong{display:block;font-size:13px}
+.hb-pay-inbox small{display:block;font-size:11px;color:#5b6d61}
+.hb-pay-inbox-actions{display:flex;flex-direction:column;gap:6px}
+.hb-pay-inbox-actions button{cursor:pointer;font:inherit;font-size:12px;font-weight:760;border-radius:10px;padding:6px 10px;border:1px solid #d7e2d4;background:#fff}
+.hb-pay-inbox-actions .hb-life-primary{border:0}
 
 .hb-plan-lock{
   opacity:.55;filter:grayscale(.15);
@@ -9750,54 +9782,82 @@ function hbOnboardView({ onClose }) {
     hbP("button", { type: "button", className: "hb-life-link", onClick: () => { hbOnboardFinish(); if (onClose) onClose(); } }, "Passer"));
 }
 
-/* ----------------------------- PayTech clés (admin) ----------------------------- */
+/* ----------------------------- Paiement manuel (admin) ----------------------------- */
 function hbPayKeysView() {
-  const [apiKey, setApiKey] = E.useState("");
-  const [apiSecret, setApiSecret] = E.useState("");
-  const [mode, setMode] = E.useState("test");
+  const [wave, setWave] = E.useState("");
+  const [orange, setOrange] = E.useState("");
+  const [freeM, setFreeM] = E.useState("");
+  const [name, setName] = E.useState("");
   const [st, setSt] = E.useState(null);
-  const [busy, setBusy] = E.useState(false);
+  const [items, setItems] = E.useState([]);
+  const [busy, setBusy] = E.useState("");
   const [msg, setMsg] = E.useState("");
-  E.useEffect(() => {
+  function load() {
     if (typeof hbPayCall !== "function") return;
     hbPayCall("status").then((r) => {
       setSt(r || {});
-      if (r && r.mode) setMode(r.mode);
+      if (r) {
+        if (r.wave) setWave(r.wave);
+        if (r.orange) setOrange(r.orange);
+        if (r.free) setFreeM(r.free);
+        if (r.name) setName(r.name);
+      }
     }).catch(() => setSt({ configured: false }));
-  }, []);
+    hbPayCall("inbox").then((r) => setItems((r && r.items) || [])).catch(() => setItems([]));
+  }
+  E.useEffect(() => { load(); }, []);
   async function save() {
-    setBusy(true); setMsg("");
+    setBusy("save"); setMsg("");
     try {
-      const out = await hbPayCall("save-keys", { api_key: apiKey, api_secret: apiSecret, mode });
+      const out = await hbPayCall("save-manual", { wave, orange, free: freeM, name });
       setSt(out);
-      setApiKey(""); setApiSecret("");
-      setMsg("Clés enregistrées. Les offres payantes peuvent encaisser.");
+      setMsg("Numéros enregistrés. Les boutons Payer affichent Wave / Orange Money.");
     } catch (e) {
       setMsg((e && e.message) || "Enregistrement impossible.");
-    } finally { setBusy(false); }
+    } finally { setBusy(""); }
+  }
+  async function decide(id, ok) {
+    setBusy(id); setMsg("");
+    try {
+      await hbPayCall(ok ? "approve" : "reject", { pid: id });
+      setItems((prev) => prev.filter((x) => x.id !== id));
+      setMsg(ok ? "Offre activée 30 jours." : "Paiement refusé.");
+    } catch (e) {
+      setMsg((e && e.message) || "Action impossible.");
+    } finally { setBusy(""); }
   }
   return hbP("div", { className: "hb-pay-keys" },
-    hbP("h3", null, "Paiement PayTech"),
+    hbP("h3", null, "Encaisser Wave / Orange Money"),
     hbP("p", { className: st && st.configured ? "hb-plan-banner is-ok" : "hb-plan-banner" },
       st && st.configured
-        ? `Clés actives (${st.mode === "live" ? "production" : "test"})${st.keyHint ? " · …" + st.keyHint : ""}.`
-        : "Aucune clé pour l’instant — le paiement affiche « à configurer »."),
-    hbP("ol", null,
-      hbP("li", null, "Compte marchand : ", hbP("a", { href: "https://paytech.sn", target: "_blank", rel: "noreferrer" }, "paytech.sn"), " → Paramètres → API."),
-      hbP("li", null, "Le site tourne d’abord en test (100 à 150 F CFA débités). La prod s’active après mail à contact@paytech.sn + NINEA / CNI."),
-      hbP("li", null, "Les montants : Essentiel 1 310 F CFA, Pro 2 620 F CFA, Elite 5 240 F CFA (30 jours).")),
-    hbP("label", null, "Clé API",
-      hbP("input", { type: "password", autoComplete: "off", value: apiKey, onChange: (e) => setApiKey(e.target.value), placeholder: "API_KEY" })),
-    hbP("label", null, "Clé secrète",
-      hbP("input", { type: "password", autoComplete: "off", value: apiSecret, onChange: (e) => setApiSecret(e.target.value), placeholder: "API_SECRET" })),
-    hbP("label", null, "Mode",
-      hbP("select", { value: mode, onChange: (e) => setMode(e.target.value) },
-        hbP("option", { value: "test" }, "Test (sandbox)"),
-        hbP("option", { value: "live" }, "Production"))),
+        ? "Les clients voient tes numéros au moment de payer. Tu confirmes ici pour activer l’offre."
+        : "Colle au moins un numéro. Tant que c’est vide, les boutons affichent « à configurer »."),
+    hbP("p", { className: "hb-life-muted" }, "Montants : Essentiel 1 310 F · Pro 2 620 F · Elite 5 240 F (30 jours)."),
+    hbP("label", null, "Nom affiché (optionnel)",
+      hbP("input", { type: "text", autoComplete: "off", value: name, onChange: (e) => setName(e.target.value), placeholder: "Playoff" })),
+    hbP("label", null, "Numéro Wave",
+      hbP("input", { type: "tel", autoComplete: "off", value: wave, onChange: (e) => setWave(e.target.value), placeholder: "77 XXX XX XX" })),
+    hbP("label", null, "Numéro Orange Money",
+      hbP("input", { type: "tel", autoComplete: "off", value: orange, onChange: (e) => setOrange(e.target.value), placeholder: "77 XXX XX XX" })),
+    hbP("label", null, "Numéro Free Money (optionnel)",
+      hbP("input", { type: "tel", autoComplete: "off", value: freeM, onChange: (e) => setFreeM(e.target.value), placeholder: "76 XXX XX XX" })),
     hbP("button", {
-      type: "button", className: "hb-life-primary", disabled: busy || !apiKey || !apiSecret, onClick: save,
-    }, busy ? "…" : "Enregistrer les clés"),
-    msg ? hbP("p", { className: "hb-life-muted" }, msg) : null);
+      type: "button", className: "hb-life-primary",
+      disabled: !!busy || (!wave && !orange && !freeM), onClick: save,
+    }, busy === "save" ? "…" : "Enregistrer les numéros"),
+    msg ? hbP("p", { className: "hb-life-muted" }, msg) : null,
+    hbP("h3", { style: { marginTop: "12px" } }, "Paiements à confirmer"),
+    items.length
+      ? hbP("ul", { className: "hb-pay-inbox" }, items.map((it) =>
+          hbP("li", { key: it.id },
+            hbP("div", null,
+              hbP("strong", null, it.email || it.name || "Compte"),
+              hbP("small", null, (it.ref || "") + " · " + (it.plan || "") + " · " + (typeof hbPlanFmtXof === "function" ? hbPlanFmtXof(it.amount) : it.amount) + " · " + (it.status === "claimed" ? "dit avoir payé" : "en attente")),
+              it.created_at ? hbP("small", null, String(it.created_at).slice(0, 16).replace("T", " ")) : null),
+            hbP("div", { className: "hb-pay-inbox-actions" },
+              hbP("button", { type: "button", className: "hb-life-primary", disabled: !!busy, onClick: () => decide(it.id, true) }, busy === it.id ? "…" : "Confirmer"),
+              hbP("button", { type: "button", disabled: !!busy, onClick: () => decide(it.id, false) }, "Refuser")))))
+      : hbP("p", { className: "hb-life-muted" }, "Aucun paiement en attente."));
 }
 
 /* ----------------------------- graphiques ----------------------------- */
@@ -9961,7 +10021,7 @@ function hbAdminDash() {
       hbP(hbChartLine, { title: "Visites par mois", hint: "Ouvertures quotidiennes uniques par navigateur", points: visM, color: "#1f6b3a" }),
       hbP(hbChartLine, { title: "Nouveaux comptes", hint: "Inscriptions sur 12 mois", points: usersM, color: "#1d4e89" }),
       hbP(hbChartLine, { title: "Abonnements premium", hint: "Paiements aboutis par mois", points: premM, color: "#b8860b" }),
-      hbP(hbChartLine, { title: "Revenus (F CFA)", hint: "Montants PayTech encaissés", points: revM, color: "#c2410c", unit: "xof" }),
+      hbP(hbChartLine, { title: "Revenus (F CFA)", hint: "Montants confirmés (Wave / Orange Money)", points: revM, color: "#c2410c", unit: "xof" }),
       hbP(hbChartLine, { title: "Actifs quotidiens", hint: "Comptes connectés · 30 derniers jours", points: dauD, color: "#6d28d9" }),
       hbP(hbChartLine, { title: "Visites quotidiennes", hint: "Toutes sessions · 30 jours", points: visD, color: "#0f6b6b" }),
       hbP(hbChartLine, { title: "Organisations créées", hint: "Nouveaux espaces de travail", points: orgM, color: "#365314" }),
@@ -10466,14 +10526,15 @@ async function hbPlanChoose(id) {
     try { window.dispatchEvent(new CustomEvent("hb-plan-changed", { detail: "free" })); } catch (e) { /* ignore */ }
     return "free";
   }
-  if (!session) throw new Error("Connecte-toi pour souscrire avec Wave, Orange Money ou une carte.");
+  if (!session) throw new Error("Connecte-toi pour payer avec Wave ou Orange Money.");
   const origin = location.href.split("#")[0].split("?")[0];
   const out = await hbPayCall("checkout", { plan: next, origin });
+  if (out && out.manual) return out;
   if (out && out.url) {
     location.href = out.url;
     return next;
   }
-  throw new Error("Lien de paiement introuvable.");
+  throw new Error("Paiement introuvable.");
 }
 
 function hbPlanBtn() {
@@ -10490,12 +10551,19 @@ function hbPlanBtn() {
     p.id !== "free" ? hbP("small", null, p.name) : null);
 }
 
+function hbPlanCopy(text) {
+  const v = String(text || "");
+  if (!v) return;
+  try { navigator.clipboard.writeText(v); } catch (e) { /* ignore */ }
+}
+
 function hbPlanView({ onClose }) {
   const [cur, setCur] = E.useState(hbPlanId);
   const [busy, setBusy] = E.useState("");
   const [err, setErr] = E.useState("");
   const [pay, setPay] = E.useState({ configured: null });
   const [note, setNote] = E.useState("");
+  const [invoice, setInvoice] = E.useState(null);
   const admin = typeof hbIsSiteAdmin === "function" && hbIsSiteAdmin();
   const session = typeof hbCloudSession === "function" ? hbCloudSession() : null;
   E.useEffect(() => {
@@ -10516,19 +10584,31 @@ function hbPlanView({ onClose }) {
     if (admin && id !== "elite") return;
     setErr(""); setNote("");
     if (id !== "free" && !session) {
-      setErr("Connecte-toi pour payer avec Wave, Orange Money, Free Money ou une carte.");
+      setErr("Connecte-toi pour payer avec Wave ou Orange Money.");
       return;
     }
     if (id !== "free" && pay.configured === false && !admin) {
-      setErr("Le paiement est à configurer. Reviens dès que PayTech est activé.");
+      setErr("Le paiement est à configurer. L’admin doit indiquer un numéro Wave ou Orange Money.");
       return;
     }
     setBusy(id);
     try {
-      await hbPlanChoose(id);
+      const out = await hbPlanChoose(id);
       setCur(hbPlanId());
+      if (out && out.manual) setInvoice(out);
     } catch (e) {
       setErr((e && e.message) || "Paiement impossible.");
+    } finally { setBusy(""); }
+  }
+  async function claim() {
+    if (!invoice || busy) return;
+    setBusy("claim"); setErr("");
+    try {
+      const out = await hbPayCall("claim", { pid: invoice.payment_id });
+      setInvoice(Object.assign({}, invoice, { status: (out && out.status) || "claimed" }));
+      setNote("C’est noté. L’offre s’active dès que le paiement est vu sur Wave ou Orange Money — en général quelques minutes.");
+    } catch (e) {
+      setErr((e && e.message) || "Impossible de signaler le paiement.");
     } finally { setBusy(""); }
   }
   const until = HB_PLAN_STATE.until ? Date.parse(HB_PLAN_STATE.until) : 0;
@@ -10537,12 +10617,29 @@ function hbPlanView({ onClose }) {
     hbP("header", { className: "hb-plan-intro" },
       hbP("p", { className: "hb-plan-kicker" }, "OFFRES PLAYOFF"),
       hbP("h3", null, "Choisis l’offre qui va avec ton club"),
-      hbP("p", null, "Gratuit pour démarrer. Essentiel, Pro et Elite se paient 30 jours via PayTech (Wave, Orange Money, Free Money, cartes).")),
+      hbP("p", null, "Gratuit pour démarrer. Essentiel, Pro et Elite se paient 30 jours par Wave, Orange Money ou Free Money.")),
     pay.configured === false
       ? hbP("p", { className: "hb-plan-banner" }, admin
-        ? "Paiement à configurer : ouvre le Dashboard et vérifie les clés PayTech."
-        : "Le paiement est à configurer. Les offres payantes s’activeront dès que PayTech sera branché.")
-      : hbP("p", { className: "hb-plan-banner is-ok" }, "Paiement PayTech · 30 jours · Wave, Orange Money, Free Money, cartes"),
+        ? "Paiement à configurer : ouvre le Dashboard et colle tes numéros Wave / Orange Money."
+        : "Le paiement est à configurer. Les offres payantes s’activeront dès que les numéros seront indiqués.")
+      : hbP("p", { className: "hb-plan-banner is-ok" }, "Paiement Wave · Orange Money · 30 jours"),
+    invoice ? hbP("div", { className: "hb-plan-pay" },
+      hbP("h4", null, "Envoie " + hbPlanFmtXof(invoice.amount)),
+      hbP("p", null, "Offre " + ((HB_PLANS[invoice.plan] && HB_PLANS[invoice.plan].name) || invoice.plan) + " · 30 jours" + (invoice.name ? " · " + invoice.name : "")),
+      invoice.ref ? hbP("p", { className: "hb-plan-pay-ref" }, "Référence à indiquer si tu peux : ", hbP("b", null, invoice.ref),
+        hbP("button", { type: "button", className: "hb-plan-copy", onClick: () => hbPlanCopy(invoice.ref) }, "Copier")) : null,
+      hbP("ul", { className: "hb-plan-pay-list" }, (invoice.methods || []).map((m) =>
+        hbP("li", { key: m.id },
+          hbP("span", null, m.label),
+          hbP("b", null, m.number),
+          hbP("button", { type: "button", className: "hb-plan-copy", onClick: () => hbPlanCopy(m.number) }, "Copier")))),
+      invoice.status === "claimed"
+        ? hbP("p", { className: "hb-plan-banner is-ok" }, "Envoi signalé. On active l’offre dès que l’argent est reçu.")
+        : hbP("button", {
+          type: "button", className: "hb-plan-btn", disabled: !!busy,
+          onClick: claim,
+        }, busy === "claim" ? "…" : "J’ai payé"),
+      hbP("button", { type: "button", className: "hb-plan-pay-cancel", onClick: () => setInvoice(null) }, "Fermer")) : null,
     untilLabel && cur !== "free"
       ? hbP("p", { className: "hb-plan-until" }, `Offre ${HB_PLANS[cur] ? HB_PLANS[cur].name : cur} valable jusqu’au ${untilLabel}.`)
       : null,
@@ -10578,7 +10675,7 @@ function hbPlanView({ onClose }) {
             : `${p.videos} vidéos / 15 jours · ${p.videoMb} Mo`,
       ];
       const paidOff = id !== "free" && pay.configured === false;
-      let label = on ? "Offre actuelle" : busy === id ? "Redirection…" : p.price ? `Payer ${hbPlanFmtXof(xof)}` : "Rester en gratuit";
+      let label = on ? "Offre actuelle" : busy === id ? "…" : p.price ? `Payer ${hbPlanFmtXof(xof)}` : "Rester en gratuit";
       if (!on && paidOff) label = "À configurer";
       if (!on && id !== "free" && !session) label = "Connecte-toi";
       return hbP("article", { key: id, className: `hb-plan-card${on ? " is-on" : ""}${id === "essentiel" ? " is-hot" : ""}` },
@@ -10596,7 +10693,7 @@ function hbPlanView({ onClose }) {
           onClick: () => pick(id),
         }, label));
     })),
-    hbP("p", { className: "hb-plan-note" }, "L’offre s’active seulement après un paiement réussi. Tu renouvelles au bout de 30 jours. Les contenus déjà créés restent en place."));
+    hbP("p", { className: "hb-plan-note" }, "L’offre s’active après envoi Wave / Orange Money, dès que le paiement est confirmé. Tu renouvelles au bout de 30 jours. Les contenus déjà créés restent en place."));
 }
 
 /* =====================================================================
@@ -13210,5 +13307,5 @@ function hbMesSuivis({ rows, teams, orgs, onOpenT, onOpenE, onOpenO }) {
 
 const TT=US;_N.createRoot(document.getElementById("root")).render(a.jsxs(hbOnlineGate,{children:[a.jsxs(TT,{children:[a.jsx(ET,{}),typeof hbNavListener==="function"?a.jsx(hbNavListener,{}):null,typeof hbLifeHost==="function"?a.jsx(hbLifeHost,{}):null]}),a.jsx(hbCloudHub,{})]}));
 </script>
-<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a5ea82dca97857d9',t:'MTc5NTM3NzUzMA=='};var l=window.parent.location,o;try{o=new URL(l.origin).origin}catch(e){try{o=new URL(new URL(l.href).origin).origin}catch(e){o=''}}var u='/cdn-cgi/challenge-platform/scripts/jsd/main.js?ray=a5ea82dca97857d9',a=document.createElement('script');a.src=o?new URL(u,o).href:u;document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>
