@@ -2160,6 +2160,14 @@ nav.tournament-tabs.nav-tabs {
   margin-left:auto;border:1px solid #d7e2d4;background:#fff;border-radius:999px;
   padding:4px 10px;font:inherit;font-size:11px;font-weight:800;cursor:pointer;color:#1f3b2c;
 }
+.hb-plan-thanks{
+  display:flex;flex-direction:column;gap:8px;align-items:flex-start;
+  padding:18px 16px;border-radius:16px;border:1px solid #c9dc8a;
+  background:linear-gradient(180deg,#f4fbe3,#fbfdf8);
+}
+.hb-plan-thanks h4{margin:0;font-size:22px;letter-spacing:-.03em;color:#1f3b2c}
+.hb-plan-thanks p{margin:0;font-size:14px;line-height:1.45;color:#2c4034}
+.hb-plan-thanks .hb-plan-btn{min-width:140px}
 .hb-plan-pay-cancel{
   align-self:flex-start;border:0;background:transparent;color:#5b6d61;
   font:inherit;font-size:12px;font-weight:760;cursor:pointer;padding:4px 0;
@@ -10513,13 +10521,10 @@ function hbPlanLimLabel(n, word) {
 
 async function hbPlanChoose(id) {
   const next = HB_PLANS[id] ? id : "free";
-  if (typeof hbIsSiteAdmin === "function" && hbIsSiteAdmin()) {
-    hbPlanRemember("elite");
-    try { window.dispatchEvent(new CustomEvent("hb-plan-changed", { detail: "elite" })); } catch (e) { /* ignore */ }
-    return "elite";
-  }
+  const admin = typeof hbIsSiteAdmin === "function" && hbIsSiteAdmin();
   const session = typeof hbCloudSession === "function" ? hbCloudSession() : null;
   if (next === "free") {
+    if (admin) return "elite";
     if (session) await hbPayCall("cancel");
     hbPlanRemember("free");
     HB_PLAN_STATE.until = null;
@@ -10564,13 +10569,52 @@ function hbPlanView({ onClose }) {
   const [pay, setPay] = E.useState({ configured: null });
   const [note, setNote] = E.useState("");
   const [invoice, setInvoice] = E.useState(null);
+  const [thanks, setThanks] = E.useState(null);
   const admin = typeof hbIsSiteAdmin === "function" && hbIsSiteAdmin();
   const session = typeof hbCloudSession === "function" ? hbCloudSession() : null;
+  function applyPaid(plan, until) {
+    if (!plan) return;
+    hbPlanRemember(plan);
+    HB_PLAN_STATE.until = until || null;
+    try { window.dispatchEvent(new CustomEvent("hb-plan-changed", { detail: plan })); } catch (e) { /* ignore */ }
+    setThanks({ plan, until: until || null });
+    setInvoice(null);
+    setNote("");
+    setCur(plan);
+  }
   E.useEffect(() => {
     const on = () => setCur(hbPlanId());
     window.addEventListener("hb-plan-changed", on);
     return () => window.removeEventListener("hb-plan-changed", on);
   }, []);
+  E.useEffect(() => {
+    if (!invoice || !invoice.payment_id || invoice.status !== "claimed") return;
+    let stop = false;
+    let n = 0;
+    async function tick() {
+      if (stop) return;
+      n += 1;
+      try {
+        const out = await hbPayCall("check", { pid: invoice.payment_id });
+        if (stop) return;
+        if (out && out.status === "completed" && out.plan) {
+          applyPaid(out.plan, out.until);
+          return;
+        }
+        if (out && out.status === "rejected") {
+          setErr("Le paiement n’a pas été confirmé. Vérifie le numéro et le montant, puis réessaie.");
+          setInvoice(Object.assign({}, invoice, { status: "pending" }));
+          return;
+        }
+      } catch (e) { /* retry */ }
+      if (n > 200) {
+        setNote("Tu peux fermer cette page. L’offre s’activera dès la confirmation, à ta prochaine ouverture.");
+      }
+    }
+    tick();
+    const t = setInterval(tick, 3000);
+    return () => { stop = true; clearInterval(t); };
+  }, [invoice && invoice.payment_id, invoice && invoice.status]);
   E.useEffect(() => {
     let stop = false;
     if (!session) { setPay({ configured: false, needAuth: true }); return; }
@@ -10578,10 +10622,16 @@ function hbPlanView({ onClose }) {
       .catch(() => { if (!stop) setPay({ configured: false }); });
     return () => { stop = true; };
   }, [session && session.access_token]);
+  E.useEffect(() => {
+    if (!invoice) return;
+    try {
+      const el = document.querySelector(".hb-plan-pay");
+      if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    } catch (e) { /* ignore */ }
+  }, [invoice && invoice.payment_id]);
   const order = ["free", "essentiel", "pro", "elite"];
   async function pick(id) {
     if (busy) return;
-    if (admin && id !== "elite") return;
     setErr(""); setNote("");
     if (id !== "free" && !session) {
       setErr("Connecte-toi pour payer avec Wave ou Orange Money.");
@@ -10595,7 +10645,10 @@ function hbPlanView({ onClose }) {
     try {
       const out = await hbPlanChoose(id);
       setCur(hbPlanId());
-      if (out && out.manual) setInvoice(out);
+      if (out && out.manual) {
+        setThanks(null);
+        setInvoice(out);
+      }
     } catch (e) {
       setErr((e && e.message) || "Paiement impossible.");
     } finally { setBusy(""); }
@@ -10605,8 +10658,12 @@ function hbPlanView({ onClose }) {
     setBusy("claim"); setErr("");
     try {
       const out = await hbPayCall("claim", { pid: invoice.payment_id });
+      if (out && out.status === "completed" && out.plan) {
+        applyPaid(out.plan, out.until);
+        return;
+      }
       setInvoice(Object.assign({}, invoice, { status: (out && out.status) || "claimed" }));
-      setNote("C’est noté. L’offre s’active dès que le paiement est vu sur Wave ou Orange Money — en général quelques minutes.");
+      setNote("Laisse cette page ouverte. Dès que le paiement est confirmé, tu passes premium ici.");
     } catch (e) {
       setErr((e && e.message) || "Impossible de signaler le paiement.");
     } finally { setBusy(""); }
@@ -10634,13 +10691,23 @@ function hbPlanView({ onClose }) {
           hbP("b", null, m.number),
           hbP("button", { type: "button", className: "hb-plan-copy", onClick: () => hbPlanCopy(m.number) }, "Copier")))),
       invoice.status === "claimed"
-        ? hbP("p", { className: "hb-plan-banner is-ok" }, "Envoi signalé. On active l’offre dès que l’argent est reçu.")
+        ? hbP("p", { className: "hb-plan-banner is-ok" }, "Envoi signalé. On attend la confirmation — ne ferme pas tout de suite.")
         : hbP("button", {
           type: "button", className: "hb-plan-btn", disabled: !!busy,
           onClick: claim,
         }, busy === "claim" ? "…" : "J’ai payé"),
       hbP("button", { type: "button", className: "hb-plan-pay-cancel", onClick: () => setInvoice(null) }, "Fermer")) : null,
-    untilLabel && cur !== "free"
+    thanks ? hbP("div", { className: "hb-plan-thanks", role: "status" },
+      hbP("p", { className: "hb-plan-kicker" }, "C’EST CONFIRMÉ"),
+      hbP("h4", null, "Merci !"),
+      hbP("p", null, "Tu es maintenant sur l’offre " + ((HB_PLANS[thanks.plan] && HB_PLANS[thanks.plan].name) || thanks.plan) +
+        (thanks.until ? " jusqu’au " + new Date(thanks.until).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) : " pendant 30 jours") +
+        ". Bon jeu avec ton club."),
+      hbP("button", {
+        type: "button", className: "hb-plan-btn",
+        onClick: () => { setThanks(null); if (typeof onClose === "function") onClose(); },
+      }, "Continuer")) : null,
+    untilLabel && cur !== "free" && !thanks
       ? hbP("p", { className: "hb-plan-until" }, `Offre ${HB_PLANS[cur] ? HB_PLANS[cur].name : cur} valable jusqu’au ${untilLabel}.`)
       : null,
     err ? hbP("p", { className: "hb-plan-err" }, err) : null,
@@ -10675,9 +10742,9 @@ function hbPlanView({ onClose }) {
             : `${p.videos} vidéos / 15 jours · ${p.videoMb} Mo`,
       ];
       const paidOff = id !== "free" && pay.configured === false;
-      let label = on ? "Offre actuelle" : busy === id ? "…" : p.price ? `Payer ${hbPlanFmtXof(xof)}` : "Rester en gratuit";
-      if (!on && paidOff) label = "À configurer";
-      if (!on && id !== "free" && !session) label = "Connecte-toi";
+      let label = busy === id ? "…" : p.price ? `Payer ${hbPlanFmtXof(xof)}` : (on ? "Offre actuelle" : "Rester en gratuit");
+      if (id !== "free" && paidOff) label = "À configurer";
+      if (id !== "free" && !session) label = "Connecte-toi";
       return hbP("article", { key: id, className: `hb-plan-card${on ? " is-on" : ""}${id === "essentiel" ? " is-hot" : ""}` },
         p.tag ? hbP("span", { className: "hb-plan-tag" }, p.tag) : null,
         hbP("h4", null, p.name),
@@ -10688,8 +10755,8 @@ function hbPlanView({ onClose }) {
         hbP("ul", null, rows.map((r) => hbP("li", { key: r }, r))),
         hbP("button", {
           type: "button",
-          className: on ? "hb-plan-btn is-current" : "hb-plan-btn",
-          disabled: !!busy || on || (admin && id !== "elite"),
+          className: on && id === "free" ? "hb-plan-btn is-current" : "hb-plan-btn",
+          disabled: !!busy || (on && id === "free") || paidOff || (id !== "free" && !session),
           onClick: () => pick(id),
         }, label));
     })),
@@ -13307,5 +13374,5 @@ function hbMesSuivis({ rows, teams, orgs, onOpenT, onOpenE, onOpenO }) {
 
 const TT=US;_N.createRoot(document.getElementById("root")).render(a.jsxs(hbOnlineGate,{children:[a.jsxs(TT,{children:[a.jsx(ET,{}),typeof hbNavListener==="function"?a.jsx(hbNavListener,{}):null,typeof hbLifeHost==="function"?a.jsx(hbLifeHost,{}):null]}),a.jsx(hbCloudHub,{})]}));
 </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a5ee20ac8ccf0d6b',t:'MTc5NTQxNTQ1MQ=='};var l=window.parent.location,o;try{o=new URL(l.origin).origin}catch(e){try{o=new URL(new URL(l.href).origin).origin}catch(e){o=''}}var u='/cdn-cgi/challenge-platform/scripts/jsd/main.js?ray=a5ee20ac8ccf0d6b',a=document.createElement('script');a.src=o?new URL(u,o).href:u;document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
