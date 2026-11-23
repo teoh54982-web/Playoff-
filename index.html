@@ -2174,14 +2174,18 @@ nav.tournament-tabs.nav-tabs {
 }
 .hb-pay-inbox{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
 .hb-pay-inbox li{
-  display:flex;align-items:flex-start;justify-content:space-between;gap:10px;
-  padding:10px;border:1px solid #dce6d9;border-radius:12px;background:#fff;
+  display:flex;flex-direction:column;align-items:stretch;gap:10px;
+  padding:12px;border:1px solid #dce6d9;border-radius:12px;background:#fff;
 }
 .hb-pay-inbox strong{display:block;font-size:13px}
 .hb-pay-inbox small{display:block;font-size:11px;color:#5b6d61}
-.hb-pay-inbox-actions{display:flex;flex-direction:column;gap:6px}
-.hb-pay-inbox-actions button{cursor:pointer;font:inherit;font-size:12px;font-weight:760;border-radius:10px;padding:6px 10px;border:1px solid #d7e2d4;background:#fff}
-.hb-pay-inbox-actions .hb-life-primary{border:0}
+.hb-pay-inbox-actions{display:flex;flex-direction:row;flex-wrap:wrap;gap:8px}
+.hb-pay-inbox-actions button{
+  flex:1;min-height:42px;min-width:120px;cursor:pointer;font:inherit;font-size:13px;font-weight:800;
+  border-radius:12px;padding:8px 12px;
+}
+.hb-pay-ok{border:0;background:#1f3b2c;color:#fff}
+.hb-pay-no{border:1px solid #d7e2d4;background:#fff;color:#9f1239}
 
 .hb-plan-lock{
   opacity:.55;filter:grayscale(.15);
@@ -9863,8 +9867,8 @@ function hbPayKeysView() {
               hbP("small", null, (it.ref || "") + " · " + (it.plan || "") + " · " + (typeof hbPlanFmtXof === "function" ? hbPlanFmtXof(it.amount) : it.amount) + " · " + (it.status === "claimed" ? "dit avoir payé" : "en attente")),
               it.created_at ? hbP("small", null, String(it.created_at).slice(0, 16).replace("T", " ")) : null),
             hbP("div", { className: "hb-pay-inbox-actions" },
-              hbP("button", { type: "button", className: "hb-life-primary", disabled: !!busy, onClick: () => decide(it.id, true) }, busy === it.id ? "…" : "Confirmer"),
-              hbP("button", { type: "button", disabled: !!busy, onClick: () => decide(it.id, false) }, "Refuser")))))
+              hbP("button", { type: "button", className: "hb-pay-ok", disabled: !!busy, onClick: () => decide(it.id, true) }, busy === it.id ? "…" : "Paiement reçu"),
+              hbP("button", { type: "button", className: "hb-pay-no", disabled: !!busy, onClick: () => decide(it.id, false) }, "Refuser")))))
       : hbP("p", { className: "hb-life-muted" }, "Aucun paiement en attente."));
 }
 
@@ -13374,5 +13378,5 @@ function hbMesSuivis({ rows, teams, orgs, onOpenT, onOpenE, onOpenO }) {
 
 const TT=US;_N.createRoot(document.getElementById("root")).render(a.jsxs(hbOnlineGate,{children:[a.jsxs(TT,{children:[a.jsx(ET,{}),typeof hbNavListener==="function"?a.jsx(hbNavListener,{}):null,typeof hbLifeHost==="function"?a.jsx(hbLifeHost,{}):null]}),a.jsx(hbCloudHub,{})]}));
 </script>
-<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a5ee20ac8ccf0d6b',t:'MTc5NTQxNTQ1MQ=='};var l=window.parent.location,o;try{o=new URL(l.origin).origin}catch(e){try{o=new URL(new URL(l.href).origin).origin}catch(e){o=''}}var u='/cdn-cgi/challenge-platform/scripts/jsd/main.js?ray=a5ee20ac8ccf0d6b',a=document.createElement('script');a.src=o?new URL(u,o).href:u;document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a5ee59539fd9c79c',t:'MTc5NTQxNzc3Mg=='};var l=window.parent.location,o;try{o=new URL(l.origin).origin}catch(e){try{o=new URL(new URL(l.href).origin).origin}catch(e){o=''}}var u='/cdn-cgi/challenge-platform/scripts/jsd/main.js?ray=a5ee59539fd9c79c',a=document.createElement('script');a.src=o?new URL(u,o).href:u;document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
